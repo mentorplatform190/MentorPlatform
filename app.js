@@ -13,54 +13,74 @@ app.use(
     })
 )
 
-app.post(['/register/mentor','register/mentee'],async(request,response) => {
+// Sign Up
+app.post(['/register/mentor','/register/mentee'],async(request,response) => {
     try{
 
         const rBody = request.body;
-        let queryVals=Object.values(rBody);
-        const table = "mentor";
-
+        let queryVals = Object.values(rBody);
+        const table = request.url.split('/')[2];
         const saltRound = 10;
-        const password = queryVals[4];
+        const password = queryVals[2];
         const salt = await bcrypt.genSalt(saltRound);
         const bcryptPassword = await bcrypt.hash(password,salt);
-        queryVals[4] = bcryptPassword;
+        queryVals[2] = bcryptPassword;
 
-        const findUser = await pool.query("SELECT * FROM " + table + " WHERE email= $1;",[queryVals[0]]);
-
-        if(findUser.rowCount>0)
-            return response.status(401).send("User already exists.");
-
-        const newMentor = pool.query("INSERT INTO mentor VALUES($1,$2,$3,$4,$5) RETURNING *;",queryVals);
-        const token = jwtGenerator(queryVals[0]);
+        const findUser = await pool.query("SELECT * FROM " + table + " WHERE email = $1",[queryVals[1]]);
+        
+        if(findUser.rowCount>0){
+            return response.status(401).json("User already exists");
+        }
+        if(table === 'mentee'){
+            await pool.query("INSERT INTO " + table + " (name, email, password, linkedin) VALUES($1,$2,$3,$4) RETURNING *",queryVals);
+        }
+        else{
+            await pool.query("INSERT INTO " + table + " (name, email, password, job_title, company, category, tags, price, experience, college, bio, profile_picture, linkedin, dates, time_slot, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *",queryVals);
+        }
+        const token = jwtGenerator(queryVals[1].email);
         response.json({token});
 
     }catch(err){
         console.error(err.message);
     }
-})
+});
 
-app.get(['/mentor/:id','/mentee/:id'],async(request,response) =>{
+// Search User
+app.get(['/mentor/:id','/mentee/:id'],async(request, response) =>{
     try {
-        
-        const email = request.params.id;
+        const id = request.params.id;
         const table = request.url.split('/')[1];
-        console.log(table);
-        const user = await pool.query("SELECT * FROM " + table +" WHERE email = $1",[email]);
-        //console.log(request.url.split('/'));
-        if((user).rowCount==0)
-        {
-            return response.status(404);
+        const user = await pool.query("SELECT * FROM " + table +" WHERE id = $1",[id]);
+        if((user).rowCount==0){
+            return response.status(404).json("Invalid Credentials");
         }
-        else
-        {
-            return response.json((user).rows[0]);
-        }
+        return response.json((user).rows[0]);
     } catch (err) {
         console.log(err.message);
-        
     }
-})
+});
+
+// Login 
+app.post(['/login/mentor','/login/mentee'],async(request, response) =>{
+    try {
+        const rBody = request.body;
+        let queryVals = Object.values(rBody);
+        const table = request.url.split('/')[2];
+        const user = await pool.query("SELECT * FROM " + table +" WHERE email = $1",[queryVals[0]]);
+        if(user.rowCount==0){
+            return response.status(401).json("Password or Email is Incorrect");
+        }
+        const validPassword = await bcrypt.compare(queryVals[1], user.rows[0].password);
+        if(!validPassword){
+            return res.status(401).json("Password or Email is Incorrect");
+        }
+        const token = jwtGenerator((user.rows[0].email));
+        return response.json({ token });
+    } catch (err) {
+        console.log(err.message);
+        return response.status(404);
+    }
+});
 
 app.get('/',(request,response) => {
     response.json({info:'API running'})
