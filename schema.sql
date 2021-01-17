@@ -8,7 +8,8 @@ CREATE TABLE mentee(
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
-    linkedin VARCHAR (255)
+    linkedin VARCHAR (255),
+    reset_token VARCHAR(255)
 );
 
 -- Mentor Table
@@ -30,7 +31,8 @@ CREATE TABLE mentor(
     linkedin VARCHAR (255),
     dates DATE, 
     time_slot DATE,
-    status VARCHAR (255)  
+    status VARCHAR (255),
+    reset_token VARCHAR(255)
 );
 
 -- Insert Query

@@ -13,4 +13,13 @@ const jwtGenerator = (user_id) => {
      
 }
 
+// const jwtResetGenerator = (user_id) => {
+//     const payload = {
+//         user: {
+//             id: user_id
+//         }
+//     }
+//     return jwt.sign(payload, process.env.RESET_PASSWORD_KEY, {expiresIn: '20m'});
+// }
+
 module.exports=jwtGenerator;
