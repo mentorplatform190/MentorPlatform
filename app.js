@@ -4,13 +4,15 @@ const bodyParser = require('body-parser');
 const app = express();
 const port = 3000;
 const pool = require('./db-connection');   
+var cors = require("cors");
 const jwtGenerator = require('./jwtGenerator');
 const authorize = require('./middleware/authorization');
 var nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
+const { response } = require('express');
 require('dotenv').config();
 
-
+app.use(cors());
 app.use(bodyParser.json())
 app.use(
     bodyParser.urlencoded({
@@ -39,10 +41,10 @@ app.post(['/register/mentor','/register/mentee'], async(request,response) => {
         try {
             var newUser = null;
             if(table === 'mentee'){
-                newUser = await pool.query("INSERT INTO " + table + " (name, email, password, linkedin, reset_token) VALUES($1,$2,$3,$4,$5) RETURNING *",queryVals);
+                newUser = await pool.query("INSERT INTO " + table + " (name, email, password, linkedin) VALUES($1,$2,$3,$4) RETURNING *",queryVals);
             }
             else{
-                newUser = await pool.query("INSERT INTO " + table + " (name, email, password, job_title, company, category, tags, price, experience, college, bio, profile_picture, linkedin, dates, time_slot, status, reset_token) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *",queryVals);
+                newUser = await pool.query("INSERT INTO " + table + " (name, email, password) VALUES ($1,$2,$3) RETURNING *",queryVals);
             }
             const token = jwtGenerator(newUser.rows[0].id);
             response.json({token});   
@@ -54,6 +56,21 @@ app.post(['/register/mentor','/register/mentee'], async(request,response) => {
     }catch(err){
         console.error(err.message);
         response.status(500).send("Server error");
+    }
+});
+
+app.post('/mentor/update', async(request, response) => {
+    try {
+        const id = request.header("id");
+        const rBody = request.body;
+        console.log(rBody);
+        const user = await pool.query("UPDATE mentor SET job_title = $1, company = $2, category = $3, tags = $4, price = $5, experience = $6, college = $7, bio = $8, profile_picture = $9, linkedin = $10, date_time = $11 WHERE id = $12 RETURNING *",
+        [rBody.job_title, rBody.company, rBody.category, rBody.tags, rBody.price, rBody.experience, rBody.college, rBody.bio, rBody.profile_picture, rBody.linkedin, rBody.date_time, id]);
+        return response.json(user);
+
+    } catch (err) {
+        console.log(err.message);
+        response.status(500).send("Server Error");
     }
 });
 
@@ -69,11 +86,25 @@ app.get(['/mentor/:id','/mentee/:id'], authorize, async(request, response) =>{
         return response.json((user).rows[0]);
     } catch (err) {
         console.log(err.message);
+        response.status(500).send("Server error");
+    }
+});
+
+// all mentor information
+
+app.get('/all/mentor', async(request, response) => {
+    try {
+        const allUser = await pool.query("SELECT * FROM mentor");
+        return response.json(allUser.rows);   
+
+    } catch (err) {
+        console.log(err.message);
+        response.status(500).send("Server error");
     }
 });
 
 // Login 
-app.post(['/login/mentor','/login/mentee'],async(request, response) =>{
+app.post(['/login/mentor','/login/mentee'], async(request, response) =>{
     try {
         const rBody = request.body;
         let queryVals = Object.values(rBody);
@@ -181,6 +212,90 @@ app.post(['/mentee/reset-password', '/mentor/reset-password'], async(request, re
     } catch (err) {
         console.error(err.message);
         return response.status(500).send("Server error");
+    }
+});
+
+// Call API(To Write Data in DB and send mail to mentor about the request)
+app.post('/call', async(request, response) => {
+    try {
+    const { mentor_id, mentee_id, dates_time, booking_status } = request.body
+    await pool.query('INSERT INTO book_call (mentor_id, mentee_id, dates_time, booking_status) VALUES ($1, $2, $3, $4)', [mentor_id, mentee_id, dates_time, booking_status], (error, results) => {
+      if (error) {
+        throw error
+      }
+      response.status(201).json(`Slot Booked`)
+    })
+    const mentorId = request.body.mentor_id;
+    const user = await pool.query("SELECT * FROM mentor WHERE id = $1",[mentor_id]);
+    var mentorMail =  user.rows[0].email;
+    var mentorName =  user.rows[0].name;
+    var transport = nodemailer.createTransport({
+       service: 'gmail',
+       auth: {
+           user: 'mplatform009@gmail.com',
+           pass: 'mentor@12'
+       }
+   });
+   var mailOptions = {
+    from: 'mplatform009@gmail.com',
+    to: mentorMail,
+    subject: 'Confirm the Session',
+ 
+    html: `<p>Hi ${mentorName},</p><p>Please confirm the request by visiting Mentee Request page on website</p>`
+};
+ 
+   transport.sendMail(mailOptions, function(err, info){
+    if(err){
+        console.log(err);
+    }else{
+        console.log('Email Sent: '+ info.response);
+    }
+});
+    } catch (err) {
+        console.error(err.message);
+        return response.status(500).send('email not send');
+    }
+});
+ 
+ 
+///API to confirm the mentee request by Mentor
+ 
+app.get('/menteeRequest/:id', async(request, response) => {
+    try {
+    const id = request.params.id;
+    console.log(id);
+    const user = await pool.query("SELECT * FROM book_call WHERE id = $1",[id]);
+    const menteeId = user.rows[0].mentee_id;
+    const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1",[menteeId]);
+    var menteeMail =  mentee.rows[0].email;
+    var menteeName =  mentee.rows[0].name;
+    var transport = nodemailer.createTransport({
+       service: 'gmail',
+       auth: {
+           user: 'mplatform009@gmail.com',
+           pass: 'mentor@12'
+       }
+   });
+   var mailOptions = {
+    from: 'mplatform009@gmail.com',
+    to: menteeMail,
+    subject: 'Session Confirmed',
+ 
+    html: `<p>Hi ${menteeName},</p><p>Your session has been Confirmed.</p><p>We will send you the call Link soon</p>`
+};
+ 
+   transport.sendMail(mailOptions, function(err, info){
+    if(err){
+        console.log(err);
+    }else{
+        console.log('Email Sent: '+ info.response);
+    }
+    });
+     return response.json("mail send to "+menteeName);
+
+    } catch (err) {
+        console.error(err.message);
+        return response.status(500).send('email not send');
     }
 });
 
