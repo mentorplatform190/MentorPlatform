@@ -9,7 +9,6 @@ const jwtGenerator = require('./jwtGenerator');
 const authorize = require('./middleware/authorization');
 var nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
-const { response } = require('express');
 require('dotenv').config();
 
 app.use(cors());
@@ -47,7 +46,8 @@ app.post(['/register/mentor','/register/mentee'], async(request,response) => {
                 newUser = await pool.query("INSERT INTO " + table + " (name, email, password) VALUES ($1,$2,$3) RETURNING *",queryVals);
             }
             const token = jwtGenerator(newUser.rows[0].id);
-            response.json({token});   
+            const user_data = newUser.rows[0];
+            response.json({user_data, token});   
 
         } catch (error) {
             return response.status(403).json("Something went wrong");
@@ -62,11 +62,20 @@ app.post(['/register/mentor','/register/mentee'], async(request,response) => {
 app.post('/mentor/update', async(request, response) => {
     try {
         const id = request.header("id");
+        const user_id = await pool.query("SELECT * from mentor WHERE id = $1",[id]);
+        if(user_id.rowCount===0){
+            console.log("Invalid ID");
+            return response.json("Invalid Credential");
+        }
         const rBody = request.body;
-        console.log(rBody);
-        const user = await pool.query("UPDATE mentor SET job_title = $1, company = $2, category = $3, tags = $4, price = $5, experience = $6, college = $7, bio = $8, profile_picture = $9, linkedin = $10, date_time = $11 WHERE id = $12 RETURNING *",
-        [rBody.job_title, rBody.company, rBody.category, rBody.tags, rBody.price, rBody.experience, rBody.college, rBody.bio, rBody.profile_picture, rBody.linkedin, rBody.date_time, id]);
-        return response.json(user);
+        try {
+            const user = await pool.query("UPDATE mentor SET job_title = $1, company = $2, category = $3, tags = $4, price = $5, experience = $6, college = $7, bio = $8, mobile_number = $9, profile_picture = $10, linkedin = $11, date_time = $12 WHERE id = $13 RETURNING *",
+            [rBody.job_title, rBody.company, rBody.category, rBody.tags, rBody.price, rBody.experience, rBody.college, rBody.bio, rBody.mobile_number, rBody.profile_picture, rBody.linkedin, rBody.date_time, id]);
+            return response.json(user.rows[0]);   
+        } catch (err) {
+            console.log(err.message);
+            response.send("Issue with update query");
+        }
 
     } catch (err) {
         console.log(err.message);
@@ -118,7 +127,8 @@ app.post(['/login/mentor','/login/mentee'], async(request, response) =>{
             return response.status(401).json("Password or Email is Incorrect");
         }
         const token = jwtGenerator((user.rows[0].email));
-        return response.json({ token });
+        const user_data = user.rows[0];
+        return response.json({ user_data, token });
     } catch (err) {
         console.log(err.message);
         return response.status(404);

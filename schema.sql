@@ -23,14 +23,15 @@ CREATE TABLE mentor(
     company VARCHAR (255),
     category VARCHAR (255),
     tags TEXT[],
-    price INTEGER,
+    price VARCHAR(255),
     experience VARCHAR (255),
     college VARCHAR (255),
     bio VARCHAR (255),
+    mobile_number VARCHAR(10),
     profile_picture VARCHAR (255),
     linkedin VARCHAR (255),
     date_time text[],
-    status BOOLEAN,
+    status BOOLEAN DEFAULT false,
     reset_token VARCHAR(255)
 );
 
