@@ -11,6 +11,7 @@ var nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
+
 app.use(cors());
 app.use(bodyParser.json())
 app.use(
@@ -71,6 +72,7 @@ app.post('/mentor/update', async(request, response) => {
         try {
             const user = await pool.query("UPDATE mentor SET job_title = $1, company = $2, category = $3, tags = $4, price = $5, experience = $6, college = $7, bio = $8, mobile_number = $9, profile_picture = $10, linkedin = $11, date_time = $12 WHERE id = $13 RETURNING *",
             [rBody.job_title, rBody.company, rBody.category, rBody.tags, rBody.price, rBody.experience, rBody.college, rBody.bio, rBody.mobile_number, rBody.profile_picture, rBody.linkedin, rBody.date_time, id]);
+            await pool.query("UPDATE mentor SET status = $1 WHERE id = $2",[true,id]);
             return response.json(user.rows[0]);   
         } catch (err) {
             console.log(err.message);
@@ -84,7 +86,7 @@ app.post('/mentor/update', async(request, response) => {
 });
 
 // Search User
-app.get(['/mentor/:id','/mentee/:id'], authorize, async(request, response) =>{
+app.get(['/mentor/:id','/mentee/:id'], async(request, response) =>{
     try {
         const id = request.params.id;
         const table = request.url.split('/')[1];
@@ -92,7 +94,22 @@ app.get(['/mentor/:id','/mentee/:id'], authorize, async(request, response) =>{
         if((user).rowCount==0){
             return response.status(404).json("Invalid Credentials");
         }
-        return response.json((user).rows[0]);
+        const allSlots = user.rows[0].date_time;
+        var booked_slot = null;
+        if(table === 'mentor'){
+            const book_info = await pool.query("SELECT dates_time FROM book_call WHERE mentor_id = $1",[id]);
+            booked_slot = book_info.rows;
+            for(let i of booked_slot){
+                var x = booked_slot[i].dates_time;
+                console.log(x);
+                // var index = allSlots.indexOf(booked_slot[i].dates_time);
+                // console.log(index);
+                allSlots.splice(index, 1);
+            }
+            // console.log(booked_slot[1].dates_time);
+        }
+        const user_data = user.rows[0];
+        return response.json( {user_data, booked_slot} );
     } catch (err) {
         console.log(err.message);
         response.status(500).send("Server error");
@@ -273,7 +290,10 @@ app.post('/call', async(request, response) => {
 app.get('/menteeRequest/:id', async(request, response) => {
     try {
     const id = request.params.id;
-    console.log(id);
+    const updateStatus = await pool.query("UPDATE book_call SET booking_status='confirm' WHERE id = $1",[id]);
+    if(updateStatus.rowCount==0){
+        return response.status(401).json("Booking Id does not Exist");
+    }
     const user = await pool.query("SELECT * FROM book_call WHERE id = $1",[id]);
     const menteeId = user.rows[0].mentee_id;
     const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1",[menteeId]);
@@ -308,6 +328,153 @@ app.get('/menteeRequest/:id', async(request, response) => {
         return response.status(500).send('email not send');
     }
 });
+
+app.get('/mentorinfo/:id', async(request, response) => {
+    try {
+    const id = request.params.id;
+    const user = await pool.query("SELECT * FROM book_call WHERE mentor_id = $1 AND booking_status='pending'",[id]);
+    const size = user.rows.length;
+    var callData = [];
+    const mentor = await pool.query("SELECT * FROM mentor WHERE id = $1",[id]);
+    for(var i=0;i<size;i++){
+        const menteeId = user.rows[i].mentee_id;
+        const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1",[menteeId]);
+        
+         callData[i] = {
+            "call_id":user.rows[i].id,
+            "mentor_id":user.rows[i].mentor_id,
+            "mentee_name":mentee.rows[0].name,
+            "call_time":user.rows[i].dates_time,
+            "mentor_email": mentor.rows[0].email,
+            "mentee_email": mentee.rows[0].email
+        }
+        console.log(user.rows[i].dates_time);
+    }
+     return response.send(callData);
+
+    } catch (err) {
+        console.error(err.message);
+        return response.status(500).send('You dont have permission');
+    }
+});
+
+// Google Calendar Events Book
+app.post('/events', (req, res) => {
+
+    const { google } = require('googleapis')
+    // Require oAuth2 from our google instance.
+    const { OAuth2 } = google.auth
+  
+    // Create a new instance of oAuth and set our Client ID & Client Secret.
+    const oAuth2Client = new OAuth2(process.env.CLIENT_ID, process.env.CLIENT_SECRET)
+  
+    // Call the setCredentials method on our oAuth2Client instance and set our refresh token.
+    oAuth2Client.setCredentials({
+      refresh_token: process.env.REFRESH_TOKEN,
+    })
+  
+    // Create a new calender instance.
+    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client })
+  
+    // Create a new event start date instance for temp uses in our calendar.
+    const TIMEOFFSET = '+05:30';
+
+// Get date-time string for calender
+    const dateTimeForCalander = () => {
+
+        let date = new Date();
+
+        let year = date.getFullYear();
+        let month = date.getMonth() + 1;
+        if (month < 10) {
+            month = `0${month}`;
+        }
+        let day = date.getDate();
+        if (day < 10) {
+            day = `0${day}`;
+        }
+        let hour = date.getHours();
+        if (hour < 10) {
+            hour = `0${hour}`;
+        }
+        let minute = date.getMinutes();
+        if (minute < 10) {
+            minute = `0${minute}`;
+        }
+
+        let newDateTime = `${year}-${month}-${day}T${hour}:${minute}:00.000${TIMEOFFSET}`;
+
+        let startDate = new Date(Date.parse(newDateTime));
+        // Delay in end time is 1
+        let endDate = new Date(new Date(startDate).setHours(startDate.getHours()+1));
+
+        return {
+            'start': startDate,
+            'end': endDate
+        }
+    };
+
+    console.log(dateTimeForCalander());
+
+    const insertEvent = async (event) => {  
+
+        try {
+            let response = await calendar.events.insert({   
+                calendarId: process.env.CALENDAR_ID,
+                resource: event,
+                sendNotifications: true,
+                conferenceDataVersion: 1,
+            });
+        
+            if (response['status'] == 200 && response['statusText'] === 'OK') {
+                return 1;
+            } else {
+                return 0;
+            }
+        } catch (error) {
+            console.log(`Error at insertEvent --> ${error}`);
+            return 0;
+        }
+    };
+    let dateTime = dateTimeForCalander();
+
+    const event = {
+      summary: `${req.body.summary}`,
+      description: `${req.body.description}`,
+      colorId: 1,
+      start: {
+        dateTime: dateTime['start'],
+        timeZone: 'Asia/Kolkata',
+      },
+      end: {
+        dateTime: dateTime['end'],
+        timeZone: 'Asia/Kolkata',
+      },
+      attendees: [
+        {email: 'satyam.chulania@gmail.com'},
+        {email: 'swic678@gmail.com'},
+        {email: 'vinayakgupta1107@gmail.com'},
+      ],
+      conferenceData: {
+        createRequest: {
+          conferenceSolutionKey: {
+            type: "hangoutsMeet",
+          },    
+          requestId: "7qxalsvy0e",
+        }
+      },
+    }
+    console.log(dateTime['start']);
+    console.log(dateTime['start']);
+
+    insertEvent(event)
+    .then((res) => {
+        console.log(res);
+    })
+    .catch((err) => {
+        console.log(err);
+    });  
+}); 
 
 app.get('/',(request,response) => {
     response.json( {info:'API running'} );
