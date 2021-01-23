@@ -268,7 +268,7 @@ app.post('/call', async(request, response) => {
     to: mentorMail,
     subject: 'Confirm the Session',
  
-    html: `<p>Hi ${mentorName},</p><p>Please confirm the request by visiting Mentee Request page on website</p>`
+    html: `<h3>Hi ${mentorName},</h3><p>Please confirm the request by logging into your MyMentor account.</p>`
 };
  
    transport.sendMail(mailOptions, function(err, info){
@@ -311,7 +311,7 @@ app.get('/menteeRequest/:id', async(request, response) => {
     to: menteeMail,
     subject: 'Session Confirmed',
  
-    html: `<p>Hi ${menteeName},</p><p>Your session has been Confirmed.</p><p>We will send you the call Link soon</p>`
+    html: `<h3>Hi ${menteeName},</h3><p>Your session has been Confirmed.</p><h4>We will send you the Invite Link soon.</h4>`
 };
  
    transport.sendMail(mailOptions, function(err, info){
@@ -341,10 +341,11 @@ app.get('/mentorinfo/:id', async(request, response) => {
         const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1",[menteeId]);
         
          callData[i] = {
-            "call_id":user.rows[i].id,
-            "mentor_id":user.rows[i].mentor_id,
-            "mentee_name":mentee.rows[0].name,
-            "call_time":user.rows[i].dates_time,
+            "call_id": user.rows[i].id,
+            "mentor_id": user.rows[i].mentor_id,
+            "mentee_name": mentee.rows[0].name,
+            "mentor_name": mentor.rows[0].name,
+            "call_time": user.rows[i].dates_time,
             "mentor_email": mentor.rows[0].email,
             "mentee_email": mentee.rows[0].email
         }
@@ -360,6 +361,12 @@ app.get('/mentorinfo/:id', async(request, response) => {
 
 // Google Calendar Events Book
 app.post('/events', (req, res) => {
+
+    const book_date = req.body.date;
+    const mentor_name = req.body.mentor_name;
+    const mentee_name = req.body.mentee_name;
+    const mentor_email = req.body.mentor_email;
+    const mentee_email = req.body.mentee_email;
 
     const { google } = require('googleapis')
     // Require oAuth2 from our google instance.
@@ -382,7 +389,7 @@ app.post('/events', (req, res) => {
 // Get date-time string for calender
     const dateTimeForCalander = () => {
 
-        let date = new Date();
+        let date = new Date(book_date);
 
         let year = date.getFullYear();
         let month = date.getMonth() + 1;
@@ -414,8 +421,6 @@ app.post('/events', (req, res) => {
         }
     };
 
-    console.log(dateTimeForCalander());
-
     const insertEvent = async (event) => {  
 
         try {
@@ -439,8 +444,8 @@ app.post('/events', (req, res) => {
     let dateTime = dateTimeForCalander();
 
     const event = {
-      summary: `${req.body.summary}`,
-      description: `${req.body.description}`,
+      summary: 'My Mentor Booking',
+      description: `This is regarding the booking between ${mentee_name} and ${mentor_name} made through MyMentor Platform`,
       colorId: 1,
       start: {
         dateTime: dateTime['start'],
@@ -451,9 +456,8 @@ app.post('/events', (req, res) => {
         timeZone: 'Asia/Kolkata',
       },
       attendees: [
-        {email: 'satyam.chulania@gmail.com'},
-        {email: 'swic678@gmail.com'},
-        {email: 'vinayakgupta1107@gmail.com'},
+        {email: mentee_email},
+        {email:  mentor_email},
       ],
       conferenceData: {
         createRequest: {
