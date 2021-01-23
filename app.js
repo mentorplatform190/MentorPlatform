@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const bodyParser = require('body-parser');
 const app = express();
 const port = 3000;
-const pool = require('./db-connection');   
+const pool = require('./db-connection');
 var cors = require("cors");
 const jwtGenerator = require('./jwtGenerator');
 const authorize = require('./middleware/authorization');
@@ -16,13 +16,13 @@ app.use(cors());
 app.use(bodyParser.json())
 app.use(
     bodyParser.urlencoded({
-        extended:true,
+        extended: true,
     })
 )
 
 // Sign Up
-app.post(['/register/mentor','/register/mentee'], async(request,response) => {
-    try{
+app.post(['/register/mentor', '/register/mentee'], async (request, response) => {
+    try {
 
         const rBody = request.body;
         let queryVals = Object.values(rBody);
@@ -30,50 +30,50 @@ app.post(['/register/mentor','/register/mentee'], async(request,response) => {
         const saltRound = 10;
         const password = queryVals[2];
         const salt = await bcrypt.genSalt(saltRound);
-        const bcryptPassword = await bcrypt.hash(password,salt);
+        const bcryptPassword = await bcrypt.hash(password, salt);
         queryVals[2] = bcryptPassword;
 
-        const findUser = await pool.query("SELECT * FROM " + table + " WHERE email = $1",[queryVals[1]]);
-        
-        if(findUser.rowCount>0){
+        const findUser = await pool.query("SELECT * FROM " + table + " WHERE email = $1", [queryVals[1]]);
+
+        if (findUser.rowCount > 0) {
             return response.status(401).json("User already exists");
         }
         try {
             var newUser = null;
-            if(table === 'mentee'){
-                newUser = await pool.query("INSERT INTO " + table + " (name, email, password, linkedin) VALUES($1,$2,$3,$4) RETURNING *",queryVals);
+            if (table === 'mentee') {
+                newUser = await pool.query("INSERT INTO " + table + " (name, email, password, linkedin) VALUES($1,$2,$3,$4) RETURNING *", queryVals);
             }
-            else{
-                newUser = await pool.query("INSERT INTO " + table + " (name, email, password) VALUES ($1,$2,$3) RETURNING *",queryVals);
+            else {
+                newUser = await pool.query("INSERT INTO " + table + " (name, email, password) VALUES ($1,$2,$3) RETURNING *", queryVals);
             }
             const token = jwtGenerator(newUser.rows[0].id);
             const user_data = newUser.rows[0];
-            response.json({user_data, token});   
+            response.json({ user_data, token });
 
         } catch (error) {
             return response.status(403).json("Something went wrong");
         }
 
-    }catch(err){
+    } catch (err) {
         console.error(err.message);
         response.status(500).send("Server error");
     }
 });
 
-app.post('/mentor/update', async(request, response) => {
+app.post('/mentor/update', authorize, async (request, response) => {
     try {
         const id = request.header("id");
-        const user_id = await pool.query("SELECT * from mentor WHERE id = $1",[id]);
-        if(user_id.rowCount===0){
+        const user_id = await pool.query("SELECT * from mentor WHERE id = $1", [id]);
+        if (user_id.rowCount === 0) {
             console.log("Invalid ID");
             return response.json("Invalid Credential");
         }
         const rBody = request.body;
         try {
             const user = await pool.query("UPDATE mentor SET job_title = $1, company = $2, category = $3, tags = $4, price = $5, experience = $6, college = $7, bio = $8, mobile_number = $9, profile_picture = $10, linkedin = $11, date_time = $12 WHERE id = $13 RETURNING *",
-            [rBody.job_title, rBody.company, rBody.category, rBody.tags, rBody.price, rBody.experience, rBody.college, rBody.bio, rBody.mobile_number, rBody.profile_picture, rBody.linkedin, rBody.date_time, id]);
-            await pool.query("UPDATE mentor SET status = $1 WHERE id = $2",[true,id]);
-            return response.json(user.rows[0]);   
+                [rBody.job_title, rBody.company, rBody.category, rBody.tags, rBody.price, rBody.experience, rBody.college, rBody.bio, rBody.mobile_number, rBody.profile_picture, rBody.linkedin, rBody.date_time, id]);
+            await pool.query("UPDATE mentor SET status = $1 WHERE id = $2", [true, id]);
+            return response.json(user.rows[0]);
         } catch (err) {
             console.log(err.message);
             response.send("Issue with update query");
@@ -86,30 +86,22 @@ app.post('/mentor/update', async(request, response) => {
 });
 
 // Search User
-app.get(['/mentor/:id','/mentee/:id'], async(request, response) =>{
+app.get(['/mentor/:id', '/mentee/:id'], authorize, async (request, response) => {
     try {
         const id = request.params.id;
         const table = request.url.split('/')[1];
-        const user = await pool.query("SELECT * FROM " + table +" WHERE id = $1",[id]);
-        if((user).rowCount==0){
+        const user = await pool.query("SELECT * FROM " + table + " WHERE id = $1", [id]);
+        if ((user).rowCount == 0) {
             return response.status(404).json("Invalid Credentials");
         }
         const allSlots = user.rows[0].date_time;
         var booked_slot = null;
-        if(table === 'mentor'){
-            const book_info = await pool.query("SELECT dates_time FROM book_call WHERE mentor_id = $1",[id]);
+        if (table === 'mentor') {
+            const book_info = await pool.query("SELECT dates_time FROM book_call WHERE mentor_id = $1", [id]);
             booked_slot = book_info.rows;
-            for(let i of booked_slot){
-                var x = booked_slot[i].dates_time;
-                console.log(x);
-                // var index = allSlots.indexOf(booked_slot[i].dates_time);
-                // console.log(index);
-                allSlots.splice(index, 1);
-            }
-            // console.log(booked_slot[1].dates_time);
         }
         const user_data = user.rows[0];
-        return response.json( {user_data, booked_slot} );
+        return response.json({ user_data, booked_slot });
     } catch (err) {
         console.log(err.message);
         response.status(500).send("Server error");
@@ -118,10 +110,10 @@ app.get(['/mentor/:id','/mentee/:id'], async(request, response) =>{
 
 // all mentor information
 
-app.get('/all/mentor', async(request, response) => {
+app.get('/all/mentor', async (request, response) => {
     try {
         const allUser = await pool.query("SELECT * FROM mentor");
-        return response.json(allUser.rows);   
+        return response.json(allUser.rows);
 
     } catch (err) {
         console.log(err.message);
@@ -130,17 +122,17 @@ app.get('/all/mentor', async(request, response) => {
 });
 
 // Login 
-app.post(['/login/mentor','/login/mentee'], async(request, response) =>{
+app.post(['/login/mentor', '/login/mentee'], async (request, response) => {
     try {
         const rBody = request.body;
         let queryVals = Object.values(rBody);
         const table = request.url.split('/')[2];
-        const user = await pool.query("SELECT * FROM " + table +" WHERE email = $1",[queryVals[0]]);
-        if(user.rowCount==0){
+        const user = await pool.query("SELECT * FROM " + table + " WHERE email = $1", [queryVals[0]]);
+        if (user.rowCount == 0) {
             return response.status(401).json("Password or Email is Incorrect");
         }
         const validPassword = await bcrypt.compare(queryVals[1], user.rows[0].password);
-        if(!validPassword){
+        if (!validPassword) {
             return response.status(401).json("Password or Email is Incorrect");
         }
         const token = jwtGenerator((user.rows[0].email));
@@ -154,22 +146,22 @@ app.post(['/login/mentor','/login/mentee'], async(request, response) =>{
 
 app.get("/verify", authorize, (request, response) => {
     try {
-      response.json(true);
+        response.json(true);
     } catch (err) {
-      console.error(err.message);
-      return response.status(500).send("Server error");
+        console.error(err.message);
+        return response.status(500).send("Server error");
     }
 });
 
-app.post(['/mentor/send-email','/mentee/send-email'], async(request, response) => {
+app.post(['/mentor/send-email', '/mentee/send-email'], async (request, response) => {
     try {
         const email = request.body.email;
         const table = request.url.split('/')[1];
 
-        const findUser = await pool.query("SELECT * FROM " + table + " WHERE email = $1",[email]);
+        const findUser = await pool.query("SELECT * FROM " + table + " WHERE email = $1", [email]);
         var newuser = findUser.rows[0];
 
-        if(findUser.rowCount==0){
+        if (findUser.rowCount == 0) {
             return response.status(401).json("Incorrect Email ID");
         }
 
@@ -178,9 +170,9 @@ app.post(['/mentor/send-email','/mentee/send-email'], async(request, response) =
                 id: findUser.rows[0].id
             }
         }
-        const token = jwt.sign(payload, process.env.RESET_PASSWORD_KEY, {expiresIn: '20m'});
+        const token = jwt.sign(payload, process.env.RESET_PASSWORD_KEY, { expiresIn: '20m' });
 
-        await pool.query("UPDATE " + table + " SET reset_token = $1 WHERE email = $2 RETURNING *",[token, email]);
+        await pool.query("UPDATE " + table + " SET reset_token = $1 WHERE email = $2 RETURNING *", [token, email]);
 
         var transport = nodemailer.createTransport({
             service: 'gmail',
@@ -189,25 +181,25 @@ app.post(['/mentor/send-email','/mentee/send-email'], async(request, response) =
                 pass: 'mentor@12'
             }
         });
-        
+
         var mailOptions = {
             from: 'mplatform009@gmail.com',
             to: email,
-            subject: 'Testing Nodemailer in nodejs',
+            subject: 'RESET PASSWORD LINK',
 
-            html: `<h1>Hi ${newuser.name},</h1><p>${process.env.CLIENT_URL}/resetpassword/${table}/${token}</p>`
+            html: `<h3>Hey ${newuser.name},</h3><h4>Please click on the below link to reset your MyMentor password: </h4><p>${process.env.CLIENT_URL}/resetpassword/${table}/${token}</p><p> Regards, <br/>MyMentor Team</p>`
         };
-        
-         
-        transport.sendMail(mailOptions, function(err, info){
-            if(err){
+
+
+        transport.sendMail(mailOptions, function (err, info) {
+            if (err) {
                 console.log(err);
-            }else{
-                console.log('Email Sent: '+ info.response);
+            } else {
+                console.log('Email Sent: ' + info.response);
             }
         });
 
-        return response.json( {msg: "Email Sent Successfully"} );
+        return response.json({ msg: "Email Sent Successfully" });
 
     } catch (err) {
         console.error(err.message);
@@ -215,22 +207,25 @@ app.post(['/mentor/send-email','/mentee/send-email'], async(request, response) =
     }
 });
 
-app.post(['/mentee/reset-password', '/mentor/reset-password'], async(request, response) => {
+app.post(['/mentee/reset-password', '/mentor/reset-password'], async (request, response) => {
     try {
         const token = request.header("token");
         const table = request.url.split('/')[1];
         const password = request.body.password;
 
-        const user = await pool.query("SELECT * FROM " + table + " WHERE reset_token = $1",[token]);
+        const user = await pool.query("SELECT * FROM " + table + " WHERE reset_token = $1", [token]);
+        console.log(token);
+        console.log(table);
+        console.log(user);
 
-        if(user.rowCount===0){
+        if (user.rowCount === 0) {
             return response.json("Invalid token");
         }
 
 
         const saltRound = 10;
         const salt = await bcrypt.genSalt(saltRound);
-        const bcryptPassword = await bcrypt.hash(password,salt);
+        const bcryptPassword = await bcrypt.hash(password, salt);
         const newPassword = bcryptPassword;
 
         const updatedUser = await pool.query("UPDATE " + table + " SET password = $1 WHERE reset_token = $2 RETURNING *", [newPassword, token]);
@@ -243,85 +238,85 @@ app.post(['/mentee/reset-password', '/mentor/reset-password'], async(request, re
 });
 
 // Call API(To Write Data in DB and send mail to mentor about the request)
-app.post('/call', async(request, response) => {
+app.post('/call', authorize, async (request, response) => {
     try {
-    const { mentor_id, mentee_id, dates_time, booking_status } = request.body
-    await pool.query('INSERT INTO book_call (mentor_id, mentee_id, dates_time, booking_status) VALUES ($1, $2, $3, $4)', [mentor_id, mentee_id, dates_time, booking_status], (error, results) => {
-      if (error) {
-        throw error
-      }
-      response.status(201).json(`Slot Booked`)
-    })
-    const mentorId = request.body.mentor_id;
-    const user = await pool.query("SELECT * FROM mentor WHERE id = $1",[mentor_id]);
-    var mentorMail =  user.rows[0].email;
-    var mentorName =  user.rows[0].name;
-    var transport = nodemailer.createTransport({
-       service: 'gmail',
-       auth: {
-           user: 'mplatform009@gmail.com',
-           pass: 'mentor@12'
-       }
-   });
-   var mailOptions = {
-    from: 'mplatform009@gmail.com',
-    to: mentorMail,
-    subject: 'Confirm the Session',
- 
-    html: `<h3>Hi ${mentorName},</h3><p>Please confirm the request by logging into your MyMentor account.</p>`
-};
- 
-   transport.sendMail(mailOptions, function(err, info){
-    if(err){
-        console.log(err);
-    }else{
-        console.log('Email Sent: '+ info.response);
-    }
-});
+        const { mentor_id, mentee_id, dates_time, booking_status } = request.body
+        await pool.query('INSERT INTO book_call (mentor_id, mentee_id, dates_time, booking_status) VALUES ($1, $2, $3, $4)', [mentor_id, mentee_id, dates_time, booking_status], (error, results) => {
+            if (error) {
+                throw error
+            }
+            response.status(201).json(`Slot Booked`)
+        })
+        const mentorId = request.body.mentor_id;
+        const user = await pool.query("SELECT * FROM mentor WHERE id = $1", [mentor_id]);
+        var mentorMail = user.rows[0].email;
+        var mentorName = user.rows[0].name;
+        var transport = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: 'mplatform009@gmail.com',
+                pass: 'mentor@12'
+            }
+        });
+        var mailOptions = {
+            from: 'mplatform009@gmail.com',
+            to: mentorMail,
+            subject: 'Confirm the Session',
+
+            html: `<h3>Hey ${mentorName},</h3><p>Please confirm the booking request by logging into your MyMentor account.</p></h4>Thank You for extending your helping hand to our mentees.<p> Regards, <br/>MyMentor Team</p>`
+        };
+
+        transport.sendMail(mailOptions, function (err, info) {
+            if (err) {
+                console.log(err);
+            } else {
+                console.log('Email Sent: ' + info.response);
+            }
+        });
     } catch (err) {
         console.error(err.message);
         return response.status(500).send('email not send');
     }
 });
- 
- 
+
+
 ///API to confirm the mentee request by Mentor
- 
-app.get('/menteeRequest/:id', async(request, response) => {
+
+app.get('/menteeRequest/:id', authorize, async (request, response) => {
     try {
-    const id = request.params.id;
-    const updateStatus = await pool.query("UPDATE book_call SET booking_status='confirm' WHERE id = $1",[id]);
-    if(updateStatus.rowCount==0){
-        return response.status(401).json("Booking Id does not Exist");
-    }
-    const user = await pool.query("SELECT * FROM book_call WHERE id = $1",[id]);
-    const menteeId = user.rows[0].mentee_id;
-    const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1",[menteeId]);
-    var menteeMail =  mentee.rows[0].email;
-    var menteeName =  mentee.rows[0].name;
-    var transport = nodemailer.createTransport({
-       service: 'gmail',
-       auth: {
-           user: 'mplatform009@gmail.com',
-           pass: 'mentor@12'
-       }
-   });
-   var mailOptions = {
-    from: 'mplatform009@gmail.com',
-    to: menteeMail,
-    subject: 'Session Confirmed',
- 
-    html: `<h3>Hi ${menteeName},</h3><p>Your session has been Confirmed.</p><h4>We will send you the Invite Link soon.</h4>`
-};
- 
-   transport.sendMail(mailOptions, function(err, info){
-    if(err){
-        console.log(err);
-    }else{
-        console.log('Email Sent: '+ info.response);
-    }
-    });
-     return response.json("mail send to "+menteeName);
+        const id = request.params.id;
+        const updateStatus = await pool.query("UPDATE book_call SET booking_status='confirm' WHERE id = $1", [id]);
+        if (updateStatus.rowCount == 0) {
+            return response.status(401).json("Booking Id does not Exist");
+        }
+        const user = await pool.query("SELECT * FROM book_call WHERE id = $1", [id]);
+        const menteeId = user.rows[0].mentee_id;
+        const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1", [menteeId]);
+        var menteeMail = mentee.rows[0].email;
+        var menteeName = mentee.rows[0].name;
+        var transport = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: 'mplatform009@gmail.com',
+                pass: 'mentor@12'
+            }
+        });
+        var mailOptions = {
+            from: 'mplatform009@gmail.com',
+            to: menteeMail,
+            subject: 'Session Confirmed',
+
+            html: `<h3>Hey ${menteeName},</h3><p>Your session has been Confirmed. Your booking id is ${id}.</p><h4>We will soon send you the Google Meet Invite Link as per the chosen slot.</h4>Thank You for booking with us.<p> Regards, <br/>MyMentor Team</p>`
+        };
+
+        transport.sendMail(mailOptions, function (err, info) {
+            if (err) {
+                console.log(err);
+            } else {
+                console.log('Email Sent: ' + info.response);
+            }
+        });
+        return response.json("mail send to " + menteeName);
 
     } catch (err) {
         console.error(err.message);
@@ -329,29 +324,29 @@ app.get('/menteeRequest/:id', async(request, response) => {
     }
 });
 
-app.get('/mentorinfo/:id', async(request, response) => {
+app.get('/mentorinfo/:id', authorize, async (request, response) => {
     try {
-    const id = request.params.id;
-    const user = await pool.query("SELECT * FROM book_call WHERE mentor_id = $1 AND booking_status='pending'",[id]);
-    const size = user.rows.length;
-    var callData = [];
-    const mentor = await pool.query("SELECT * FROM mentor WHERE id = $1",[id]);
-    for(var i=0;i<size;i++){
-        const menteeId = user.rows[i].mentee_id;
-        const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1",[menteeId]);
-        
-         callData[i] = {
-            "call_id": user.rows[i].id,
-            "mentor_id": user.rows[i].mentor_id,
-            "mentee_name": mentee.rows[0].name,
-            "mentor_name": mentor.rows[0].name,
-            "call_time": user.rows[i].dates_time,
-            "mentor_email": mentor.rows[0].email,
-            "mentee_email": mentee.rows[0].email
+        const id = request.params.id;
+        const user = await pool.query("SELECT * FROM book_call WHERE mentor_id = $1 AND booking_status='pending'", [id]);
+        const size = user.rows.length;
+        var callData = [];
+        const mentor = await pool.query("SELECT * FROM mentor WHERE id = $1", [id]);
+        for (var i = 0; i < size; i++) {
+            const menteeId = user.rows[i].mentee_id;
+            const mentee = await pool.query("SELECT * FROM mentee WHERE id = $1", [menteeId]);
+
+            callData[i] = {
+                "call_id": user.rows[i].id,
+                "mentor_id": user.rows[i].mentor_id,
+                "mentee_name": mentee.rows[0].name,
+                "mentor_name": mentor.rows[0].name,
+                "call_time": user.rows[i].dates_time,
+                "mentor_email": mentor.rows[0].email,
+                "mentee_email": mentee.rows[0].email
+            }
+            console.log(user.rows[i].dates_time);
         }
-        console.log(user.rows[i].dates_time);
-    }
-     return response.send(callData);
+        return response.send(callData);
 
     } catch (err) {
         console.error(err.message);
@@ -371,22 +366,22 @@ app.post('/events', (req, res) => {
     const { google } = require('googleapis')
     // Require oAuth2 from our google instance.
     const { OAuth2 } = google.auth
-  
+
     // Create a new instance of oAuth and set our Client ID & Client Secret.
     const oAuth2Client = new OAuth2(process.env.CLIENT_ID, process.env.CLIENT_SECRET)
-  
+
     // Call the setCredentials method on our oAuth2Client instance and set our refresh token.
     oAuth2Client.setCredentials({
-      refresh_token: process.env.REFRESH_TOKEN,
+        refresh_token: process.env.REFRESH_TOKEN,
     })
-  
+
     // Create a new calender instance.
     const calendar = google.calendar({ version: 'v3', auth: oAuth2Client })
-  
+
     // Create a new event start date instance for temp uses in our calendar.
     const TIMEOFFSET = '+05:30';
 
-// Get date-time string for calender
+    // Get date-time string for calender
     const dateTimeForCalander = () => {
 
         let date = new Date(book_date);
@@ -413,7 +408,7 @@ app.post('/events', (req, res) => {
 
         let startDate = new Date(Date.parse(newDateTime));
         // Delay in end time is 1
-        let endDate = new Date(new Date(startDate).setHours(startDate.getHours()+1));
+        let endDate = new Date(new Date(startDate).setHours(startDate.getHours() + 1));
 
         return {
             'start': startDate,
@@ -421,16 +416,16 @@ app.post('/events', (req, res) => {
         }
     };
 
-    const insertEvent = async (event) => {  
+    const insertEvent = async (event) => {
 
         try {
-            let response = await calendar.events.insert({   
+            let response = await calendar.events.insert({
                 calendarId: process.env.CALENDAR_ID,
                 resource: event,
                 sendNotifications: true,
                 conferenceDataVersion: 1,
             });
-        
+
             if (response['status'] == 200 && response['statusText'] === 'OK') {
                 return 1;
             } else {
@@ -444,46 +439,46 @@ app.post('/events', (req, res) => {
     let dateTime = dateTimeForCalander();
 
     const event = {
-      summary: 'My Mentor Booking',
-      description: `This is regarding the booking between ${mentee_name} and ${mentor_name} made through MyMentor Platform`,
-      colorId: 1,
-      start: {
-        dateTime: dateTime['start'],
-        timeZone: 'Asia/Kolkata',
-      },
-      end: {
-        dateTime: dateTime['end'],
-        timeZone: 'Asia/Kolkata',
-      },
-      attendees: [
-        {email: mentee_email},
-        {email:  mentor_email},
-      ],
-      conferenceData: {
-        createRequest: {
-          conferenceSolutionKey: {
-            type: "hangoutsMeet",
-          },    
-          requestId: "7qxalsvy0e",
-        }
-      },
+        summary: 'My Mentor Booking',
+        description: `This is regarding the booking between ${mentee_name} and ${mentor_name} made through MyMentor Platform`,
+        colorId: 1,
+        start: {
+            dateTime: dateTime['start'],
+            timeZone: 'Asia/Kolkata',
+        },
+        end: {
+            dateTime: dateTime['end'],
+            timeZone: 'Asia/Kolkata',
+        },
+        attendees: [
+            { email: mentee_email },
+            { email: mentor_email },
+        ],
+        conferenceData: {
+            createRequest: {
+                conferenceSolutionKey: {
+                    type: "hangoutsMeet",
+                },
+                requestId: "7qxalsvy0e",
+            }
+        },
     }
     console.log(dateTime['start']);
     console.log(dateTime['start']);
 
     insertEvent(event)
-    .then((res) => {
-        console.log(res);
-    })
-    .catch((err) => {
-        console.log(err);
-    });  
-}); 
+        .then((res) => {
+            console.log(res);
+        })
+        .catch((err) => {
+            console.log(err);
+        });
+});
 
-app.get('/',(request,response) => {
-    response.json( {info:'API running'} );
+app.get('/', (request, response) => {
+    response.json({ info: 'API running' });
 })
 
-app.listen(port,() => {
+app.listen(port, () => {
     console.log(`App running on port ${port} `);
 })
